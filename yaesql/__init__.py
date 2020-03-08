@@ -8,6 +8,7 @@ import pyparsing as pp
 class Expr(object):
 
     def __init__(self, sub=None):
+        #print(">>>", self.__class__.__name__, "init", repr(sub))
         self.is_sub = False
 
     def dump(self):
@@ -37,7 +38,6 @@ class RegExLiteral(Literal):
 
     def compose(self, field_name):
         return self.val
-
 
 class StringLiteral(Literal):
 
@@ -88,6 +88,8 @@ class SimpleTerm(Expr):
             }
         return q
 
+#----------------------------------------------------------------------#
+
 class ComplexTerm(Expr):
 
     def __init__(self, field_expr, value_expr):
@@ -105,6 +107,43 @@ class ComplexTerm(Expr):
         q = self.value_expr.compose(field_name)
         return q
 
+#----------------------------------------------------------------------#
+
+class CompareValue(Expr):
+
+    OPS = {
+        '<' : 'lt' ,
+        '<=': 'lte',
+        '>=': 'gte',
+        '>' : 'gt' ,
+    }
+
+    def __init__(self, exprs):
+        super().__init__( exprs )
+        self.type = exprs[0]
+        self.expr = exprs[1]
+        self.expr.is_sub = True
+
+    def dump(self):
+        return "COMPARE(%s, %s)" % ( self.type, self.expr.dump() )
+
+    def compose(self, field_name):
+
+        op = CompareValue.OPS[self.type]
+        
+        v = self.expr.compose(field_name)
+
+        q = {
+            'range': {
+                field_name : {
+                    op : v
+                }
+            }
+        }
+        
+        return q
+
+#----------------------------------------------------------------------#
 
 class MultiValue(Expr):
 
@@ -227,7 +266,6 @@ class NotExpr(Expr):
 
         return q
 
-
 class AndExpr(Expr):
 
     def __init__(self, exprs):
@@ -310,9 +348,6 @@ class Query(Expr):
     def compose(self, field_name):
 
         if len(self.exprs) == 1:
-            
-            print(1)
-            
             e = self.exprs[0]
             
             q = e.compose(field_name)
@@ -359,9 +394,6 @@ class Query(Expr):
                 q['bool']['must_not'] = must_not_conds if len(must_not_conds) > 1 else must_not_conds[0] 
             if should_conds  : 
                 q['bool']['should'  ] = should_conds if len(should_conds) > 1 else should_conds[0] 
-
-
-
             
             if self.is_sub:
                 return q
@@ -370,6 +402,7 @@ class Query(Expr):
                 'query': q
             }
 
+#----------------------------------------------------------------------#
 
 def _create_parser(self):
 
@@ -387,7 +420,7 @@ def _create_parser(self):
 
     #
     # -foo_bar:
-    TERM    = pp.Word(pp.alphanums, pp.alphanums+'.-+_/')
+    TERM    = pp.Word(pp.alphanums, pp.alphanums+'.:-+_/')
     
 
     #
@@ -418,8 +451,14 @@ def _create_parser(self):
 
     PLUS  = pp.Suppress('+')
     MINUS = pp.Suppress('-')
-
+    
     COLON = pp.Suppress(':')
+    EQ    = pp.Suppress('=')
+
+    LT    = pp.Literal('<')
+    LTE   = pp.Literal('<=')
+    GT    = pp.Literal('>')
+    GTE   = pp.Literal('>=')
 
     NOT   = pp.Suppress('NOT')
     AND   = pp.Suppress('AND')
@@ -446,8 +485,8 @@ def _create_parser(self):
     simple_term = (
             # bool_term 
             #| 
-            basic_value                                             .setParseAction( self.create_SimpleTerm )
-    )
+            basic_value.copy()
+    ) .setParseAction( self.create_SimpleTerm )
 
     #
     # COMPLEX TERM 
@@ -470,14 +509,22 @@ def _create_parser(self):
               + 
               RPAR
              )      
+    
+    compare_term = (
+              (LTE | LT | GTE | GT)
+              +
+              basic_value
+    )                                                                   .setParseAction( self.create_CompareValue ) 
 
     complex_value = (
              simple_term 
              |
              multi_term_sequence
+             |
+             compare_term
             )
     
-    complex_term = (FIELD + COLON + complex_value)                           .setParseAction( self.create_ComplexTerm ) 
+    complex_term = (FIELD + (EQ | COLON) + complex_value)                      .setParseAction( self.create_ComplexTerm ) 
 
     #-------------------------------------------------------------------
     # EXPRESSION
@@ -551,6 +598,8 @@ def _create_parser(self):
     return parser
 
 
+           
+#----------------------------------------------------------------------#
 
 class Parser(object):
     
@@ -569,17 +618,20 @@ class Parser(object):
     def create_SimpleTerm(self, s, loc, toks):
         return SimpleTerm( toks[0] )
 
+    def create_CompareValue(self, s, loc, toks):
+        return CompareValue( toks )
+
+    def create_MultiValue(self, s, loc, toks):
+        return MultiValue(toks)
+
+    def create_ComplexTerm(self, s, loc, toks):
+        return ComplexTerm( toks[0], toks[1] )
+
     def create_BoolMust(self, s, loc, toks):
         return BoolMust( toks[0] )
 
     def create_BoolMustNot(self, s, loc, toks):
         return BoolMustNot( toks[0] )
-
-    def create_ComplexTerm(self, s, loc, toks):
-        return ComplexTerm( toks[0], toks[1] )
-
-    def create_MultiValue(self, s, loc, toks):
-        return MultiValue(toks)
 
     def create_NotExpr(self, s, loc, toks):
         return NotExpr( toks[0] )
@@ -602,11 +654,38 @@ class Parser(object):
     def parseString(self, s):
         return self.parser.parseString(s)[0]
 
+#----------------------------------------------------------------------#
+#                                                                      #
+#----------------------------------------------------------------------#
 
+def prettyformat(o, l=0, ind='    '):
+    s = ''
+    if isinstance(o, dict):
+        s += "{\n"
+        for k,v in o.items():
+            s += ind * (l+1)
+            s += '"%s" : %s' % (k, prettyformat(v, l+1, ind))
+        s += ind * l
+        s += "}\n"
+    elif isinstance(o, list):
+        s += "[\n"
+        for o2 in o:
+            s += ind * (l+1) + prettyformat(o2, l+1, ind) 
+            s += ind * (l+1) + ',\n'
+        s += ind * l
+        s +="]\n"
+    else:
+        s = repr(o) + '\n'
+    return s
+
+#----------------------------------------------------------------------#
+#                                                                      #
+#----------------------------------------------------------------------#
 
 if __name__ == "__main__":
 
     import sys
+    import json
     
     parser = Parser()
     
@@ -622,37 +701,8 @@ if __name__ == "__main__":
     
     es_dsl_query = query_generator.compose(default_field)
     
+    print("-----JSON STRING---")
+    print( repr(json.dumps(es_dsl_query)) )
     
-    def myprint(o, l=0, ind='    '):
-        s = ''
-        if isinstance(o, dict):
-            s += "{\n"
-            for k,v in o.items():
-                s += ind * (l+1)
-                s += '"%s" : %s' % (k, myprint(v, l+1, ind))
-            s += ind * l
-            s += "}\n"
-        elif isinstance(o, list):
-            s += "[\n"
-            for o2 in o:
-                s += ind * (l+1) + myprint(o2, l+1, ind) 
-                s += ind * (l+1) + ',\n'
-            s += ind * l
-            s +="]\n"
-        else:
-            s = repr(o) + '\n'
-        return s
-    
-    
-    print( myprint(es_dsl_query) )
-    
-    '''
-    from elasticsearch import Elasticsearch
-    
-    es = Elasticsearch()
-    
-    res = es.search(index=index_name, body=query_body, size=10000)
-    print("Got %d Hits:" % res['hits']['total']['value'])
-    for hit in res['hits']['hits']:
-        print(hit["_source"])
-    '''
+    print("----- ES DSL -----")
+    print( prettyformat(es_dsl_query) )

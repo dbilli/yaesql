@@ -34,6 +34,69 @@ class TestStringMethods(unittest.TestCase):
         query_body = query_descriptor.compose("message")
        
         self.assertEqual( json.dumps(query_body), '{"query": {"bool": {"should": [{"term": {"field1": {"value": "foo"}}}, {"term": {"message": {"value": "bar"}}}]}}}')
+
+    def test_strings(self):
+
+        import yaesql
+        import json
+        
+        parser = yaesql.Parser()
+        
+        tests = [
+            #
+            # Simple term
+            #
+            (
+             'foo', 
+             '{"query": {"term": {"message": {"value": "foo"}}}}'
+            ),
+            (
+             '"foo"', 
+             '{"query": {"term": {"message": {"value": "foo"}}}}'
+            ),
+            (
+             "'foo'", 
+             '{"query": {"term": {"message": {"value": "foo"}}}}'
+            ),
+            (
+             'r"foo"', 
+             '{"query": {"regexp": {"message": {"value": "foo"}}}}'
+            ), 
+            (
+             "r'foo'", 
+             '{"query": {"regexp": {"message": {"value": "foo"}}}}'
+            ),
+            #
+            # Complex field
+            #
+            (
+             'field1:foo', 
+             '{"query": {"term": {"field1": {"value": "foo"}}}}'
+            ),
+            (
+             'field1:"foo"', 
+             '{"query": {"term": {"field1": {"value": "foo"}}}}'
+            ),
+            (
+             "field1:'foo'", 
+             '{"query": {"term": {"field1": {"value": "foo"}}}}'
+            ),
+            (
+             'field1:r"foo"', 
+             '{"query": {"regexp": {"field1": {"value": "foo"}}}}'
+            ), 
+            (
+             "field1:r'foo'", 
+             '{"query": {"regexp": {"field1": {"value": "foo"}}}}'
+            ),
+
+        ]
+        
+        for s, s2 in tests:
+            q = parser.parseString(s)
+            qs = q.compose("message")
+            
+            self.assertEqual( json.dumps(qs), s2 )
         
         
 
