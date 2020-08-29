@@ -16,7 +16,7 @@ Yaesql is a ElasticSearch's Query DSL generator.
 
 It's based on a "query_string"-like syntax and provides a simple parser that generates a Query DSL object (dictionary).
 
-```
+```python
 import yaesql
 
 parser = yaesql.Parser()
@@ -30,7 +30,7 @@ print(query_body)
 
 Output:
 
-```
+```json
 {
     "query" : {
         "bool" : {
@@ -62,7 +62,7 @@ Output:
 
 ## 2. Installing<a name="installing"></a>
 
-```
+```bash
 git clone https://github.com/dbilli/yaesql.git
 cd yaesql
 python setup.py test
@@ -82,7 +82,7 @@ python setup.py install
 
 #### Create a parser
 
-```
+```python
 from yaesql import Parser
 
 parser = Parser()
@@ -92,7 +92,7 @@ parser = Parser()
 
 Use the method `parseString()` to parse a query string:
 
-```
+```python
 query_obj = parser.parseString("field1:foo")
 ```
 
@@ -102,13 +102,13 @@ The method returns an instance of the class `Query`.
 
 Call the `Query::compose()` method. The methods accepts a string with the name of the `default field`:
 
-```
+```python
 dsl_query = query_obj.compose("message")
 ```
 
 #### User the DSL object
 
-```
+```python
 from elasticsearch import Elasticsearch
 
 es = Elasticsearch()
@@ -242,7 +242,7 @@ foo
 
 Result:
 
-```
+```json
 {
     "query" : {
         "term" : {
@@ -264,7 +264,7 @@ text:r"foo.*"
 
 Result:
 
-```
+```json
 {
     "query" : {
         "regexp" : {
@@ -286,7 +286,7 @@ message:alpha AND omega OR field1:(-bar -foo)
 
 Result:
 
-```
+```json
 {
     "query" : {
         "bool" : {
